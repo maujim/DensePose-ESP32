@@ -27,10 +27,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include <string.h>
 #include <math.h>
 
 static const char *TAG = "wifi_csi";
+
+// Queue for non-blocking JSON output
+// Queue holds CSI data to be output by a separate task
+#define CSI_OUTPUT_QUEUE_SIZE 16
+static QueueHandle_t s_csi_output_queue = NULL;
+static TaskHandle_t s_csi_output_task = NULL;
 
 // CSI configuration
 // These settings control what CSI data we receive
@@ -55,6 +62,46 @@ static void *s_user_ctx = NULL;
 // Statistics
 static uint32_t s_packets_received = 0;
 static uint32_t s_packets_processed = 0;
+static uint32_t s_packets_dropped = 0;  // Dropped due to queue full
+
+/**
+ * @brief Output task that prints CSI data as JSON
+ *
+ * This runs in a separate task to avoid blocking the WiFi driver callback.
+ * The callback queues data, and this task processes the queue at its own pace.
+ */
+static void wifi_csi_output_task(void *pvParameters)
+{
+    (void)pvParameters;
+    csi_data_t data;
+
+    ESP_LOGI(TAG, "CSI output task started");
+
+    while (1) {
+        // Wait for data from the queue (portMAX_DELAY = wait forever)
+        if (xQueueReceive(s_csi_output_queue, &data, portMAX_DELAY) == pdTRUE) {
+            // Stream CSI data over serial in JSON format
+            // Format: {"ts":12345,"rssi":-45,"num":64,"amp":[...],"phase":[...]}
+            printf("{\"ts\":%lu,\"rssi\":%d,\"num\":%d,\"amp\":[",
+                   data.timestamp, data.rssi, data.num_subcarriers);
+
+            for (int i = 0; i < data.num_subcarriers; i++) {
+                printf("%.2f%s", data.amplitude[i],
+                       (i < data.num_subcarriers - 1) ? "," : "");
+            }
+
+            printf("],\"phase\":[");
+            for (int i = 0; i < data.num_subcarriers; i++) {
+                printf("%.4f%s", data.phase[i],
+                       (i < data.num_subcarriers - 1) ? "," : "");
+            }
+            printf("]}\n");
+        }
+    }
+
+    // Task should never exit
+    vTaskDelete(NULL);
+}
 
 /**
  * @brief Process raw CSI buffer into amplitude/phase
@@ -83,8 +130,9 @@ static void process_csi_data(const int8_t *raw_buf, uint16_t len, csi_data_t *ou
         int8_t Q = raw_buf[i * 2 + 1];
 
         // Calculate amplitude: |H| = sqrt(I² + Q²)
-        // Using float for simplicity; could optimize with fixed-point later
-        out->amplitude[i] = sqrtf((float)(I * I + Q * Q));
+        // Cast to float before multiplication to prevent integer overflow
+        // (e.g., I=-128 would cause I*I to overflow signed 16-bit int)
+        out->amplitude[i] = sqrtf((float)I * I + (float)Q * Q);
 
         // Calculate phase: angle = atan2(Q, I)
         // Result is in radians, range [-π, π]
@@ -119,10 +167,14 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info)
     processed.timestamp = (uint32_t)(esp_timer_get_time() / 1000);  // Convert to ms
 
     // Store as latest (thread-safe)
-    if (xSemaphoreTake(s_csi_mutex, 0) == pdTRUE) {
+    // Use small timeout instead of immediate fail to reduce mutex contention issues
+    if (xSemaphoreTake(s_csi_mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
         memcpy(&s_latest_csi, &processed, sizeof(csi_data_t));
         xSemaphoreGive(s_csi_mutex);
         s_packets_processed++;
+    } else {
+        // Mutex was held - skip storing this packet but still process it
+        // This prevents blocking the WiFi driver callback
     }
 
     // Call user callback if registered
@@ -130,28 +182,19 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info)
         s_user_callback(&processed, s_user_ctx);
     }
 
-    // Stream CSI data over serial in JSON format
-    // This allows real-time visualization and analysis on the laptop
-    // Format: {"ts":12345,"rssi":-45,"num":64,"amp":[...],"phase":[...]}
-    printf("{\"ts\":%lu,\"rssi\":%d,\"num\":%d,\"amp\":[",
-           processed.timestamp, processed.rssi, processed.num_subcarriers);
-
-    for (int i = 0; i < processed.num_subcarriers; i++) {
-        printf("%.2f%s", processed.amplitude[i],
-               (i < processed.num_subcarriers - 1) ? "," : "");
+    // Queue data for output task instead of printf directly
+    // This prevents blocking the WiFi driver callback with slow I/O
+    if (s_csi_output_queue != NULL) {
+        if (xQueueSend(s_csi_output_queue, &processed, 0) != pdTRUE) {
+            // Queue full - drop this packet and count it
+            s_packets_dropped++;
+        }
     }
-
-    printf("],\"phase\":[");
-    for (int i = 0; i < processed.num_subcarriers; i++) {
-        printf("%.4f%s", processed.phase[i],
-               (i < processed.num_subcarriers - 1) ? "," : "");
-    }
-    printf("]}\n");
 
     // Log occasionally for debugging (every 100 packets)
     if (s_packets_received % 100 == 0) {
-        ESP_LOGD(TAG, "CSI packet #%lu: %d subcarriers, RSSI=%d dBm",
-                 s_packets_received, processed.num_subcarriers, processed.rssi);
+        ESP_LOGD(TAG, "CSI packet #%lu: %d subcarriers, RSSI=%d dBm, dropped=%lu",
+                 s_packets_received, processed.num_subcarriers, processed.rssi, s_packets_dropped);
 
         // Print first few amplitude values for debugging
         ESP_LOGD(TAG, "Amplitudes[0-4]: %.1f, %.1f, %.1f, %.1f, %.1f",
@@ -167,10 +210,37 @@ esp_err_t wifi_csi_init(void)
 
     ESP_LOGI(TAG, "Initializing WiFi CSI collection...");
 
+    // Create queue for non-blocking output
+    s_csi_output_queue = xQueueCreate(CSI_OUTPUT_QUEUE_SIZE, sizeof(csi_data_t));
+    if (s_csi_output_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create output queue");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Create output task for JSON serialization
+    BaseType_t ret_task = xTaskCreate(
+        wifi_csi_output_task,
+        "csi_output",
+        4096,                    // Stack size
+        NULL,                    // Parameters
+        5,                       // Priority (medium)
+        &s_csi_output_task       // Task handle
+    );
+    if (ret_task != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create output task");
+        vQueueDelete(s_csi_output_queue);
+        s_csi_output_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     // Create mutex for thread-safe access to latest CSI data
     s_csi_mutex = xSemaphoreCreateMutex();
     if (s_csi_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create mutex");
+        vTaskDelete(s_csi_output_task);
+        vQueueDelete(s_csi_output_queue);
+        s_csi_output_queue = NULL;
+        s_csi_output_task = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -210,6 +280,15 @@ esp_err_t wifi_csi_deinit(void)
     // Disable CSI
     esp_wifi_set_csi(false);
     esp_wifi_set_csi_rx_cb(NULL, NULL);
+
+    // Clean up queue
+    if (s_csi_output_queue != NULL) {
+        vQueueDelete(s_csi_output_queue);
+        s_csi_output_queue = NULL;
+    }
+
+    // Clean up task (note: task will be deleted when queue is deleted)
+    s_csi_output_task = NULL;
 
     // Clean up mutex
     if (s_csi_mutex != NULL) {
@@ -256,12 +335,16 @@ bool wifi_csi_is_active(void)
     return s_csi_active;
 }
 
-void wifi_csi_get_stats(uint32_t *packets_received, uint32_t *packets_processed)
+void wifi_csi_get_stats(uint32_t *packets_received, uint32_t *packets_processed,
+                        uint32_t *packets_dropped)
 {
     if (packets_received != NULL) {
         *packets_received = s_packets_received;
     }
     if (packets_processed != NULL) {
         *packets_processed = s_packets_processed;
+    }
+    if (packets_dropped != NULL) {
+        *packets_dropped = s_packets_dropped;
     }
 }
