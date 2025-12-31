@@ -41,6 +41,12 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+// Event handler instances - stored for potential future cleanup
+// Note: Currently these are never unregistered as WiFi is expected to
+// run for the lifetime of the application.
+static esp_event_handler_instance_t s_wifi_any_id_instance;
+static esp_event_handler_instance_t s_ip_got_ip_instance;
+
 // Connection retry counter
 static int s_retry_num = 0;
 #define MAX_RETRY CONFIG_WIFI_MAXIMUM_RETRY
@@ -114,13 +120,10 @@ static esp_err_t wifi_init_sta(void)
 
     // Register event handlers
     // We want to know about WiFi events (connect/disconnect) and IP events (got IP)
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id));
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &s_wifi_any_id_instance));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip));
+        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &s_ip_got_ip_instance));
 
     // Configure WiFi connection parameters
     wifi_config_t wifi_config = {
