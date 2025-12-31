@@ -130,8 +130,9 @@ static void process_csi_data(const int8_t *raw_buf, uint16_t len, csi_data_t *ou
         int8_t Q = raw_buf[i * 2 + 1];
 
         // Calculate amplitude: |H| = sqrt(I² + Q²)
-        // Using float for simplicity; could optimize with fixed-point later
-        out->amplitude[i] = sqrtf((float)(I * I + Q * Q));
+        // Cast to float before multiplication to prevent integer overflow
+        // (e.g., I=-128 would cause I*I to overflow signed 16-bit int)
+        out->amplitude[i] = sqrtf((float)I * I + (float)Q * Q);
 
         // Calculate phase: angle = atan2(Q, I)
         // Result is in radians, range [-π, π]
