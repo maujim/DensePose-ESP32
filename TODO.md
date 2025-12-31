@@ -12,6 +12,10 @@
 - [x] Research DensePose WiFi paper
 - [x] Set up project structure
 - [x] Create development documentation (AGENTS.md)
+- [ ] Set up environment-based WiFi configuration
+  - [ ] Create .env file for WiFi credentials (SSID/password)
+  - [ ] Add .env to .gitignore
+  - [ ] Update build system to read from .env and inject into firmware
 - [ ] Install ESP-IDF v5.x
 - [ ] Verify hardware connection and flashing
   - [ ] Install USB drivers for ESP32-S3-Zero
@@ -24,7 +28,6 @@
   - [x] I/Q to amplitude/phase conversion
   - [x] Thread-safe data access
 - [ ] Test CSI data collection on hardware
-  - [ ] Configure WiFi credentials
   - [ ] Build and flash firmware
   - [ ] Verify CSI packets are being received
   - [ ] Validate CSI data quality
