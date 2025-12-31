@@ -29,9 +29,9 @@
 // Logging tag - used to identify log messages from this file
 static const char *TAG = "main";
 
-// WiFi credentials - TODO: Move to menuconfig or NVS
-#define WIFI_SSID      "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD  "YOUR_WIFI_PASSWORD"
+// WiFi credentials - loaded from Kconfig (can be set via .env file)
+#define WIFI_SSID      CONFIG_WIFI_SSID
+#define WIFI_PASSWORD  CONFIG_WIFI_PASSWORD
 
 // Event group to signal WiFi connection status
 static EventGroupHandle_t s_wifi_event_group;
@@ -40,7 +40,7 @@ static EventGroupHandle_t s_wifi_event_group;
 
 // Connection retry counter
 static int s_retry_num = 0;
-#define MAX_RETRY 5
+#define MAX_RETRY CONFIG_WIFI_MAXIMUM_RETRY
 
 /**
  * @brief WiFi and IP event handler

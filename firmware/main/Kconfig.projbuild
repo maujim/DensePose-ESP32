@@ -1,0 +1,25 @@
+menu "DensePose WiFi Configuration"
+
+    config WIFI_SSID
+        string "WiFi SSID"
+        default "$WIFI_SSID"
+        help
+            SSID (network name) of the WiFi access point to connect to.
+            Automatically loaded from .env file if present via environment variable.
+            Can also be set manually via menuconfig.
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+        default "$WIFI_PASSWORD"
+        help
+            WiFi password (WPA or WPA2) for the access point.
+            Automatically loaded from .env file if present via environment variable.
+            Can also be set manually via menuconfig.
+
+    config WIFI_MAXIMUM_RETRY
+        int "Maximum retry attempts"
+        default 5
+        help
+            Maximum number of times to retry WiFi connection before giving up.
+
+endmenu
