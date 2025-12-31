@@ -12,9 +12,9 @@
 - [x] Research DensePose WiFi paper
 - [x] Set up project structure
 - [x] Create development documentation (AGENTS.md)
-- [ ] Set up environment-based WiFi configuration
-  - [ ] Create .env file for WiFi credentials (SSID/password)
-  - [ ] Add .env to .gitignore
+- [~] Set up environment-based WiFi configuration
+  - [x] Create .env file for WiFi credentials (SSID/password)
+  - [x] Add .env to .gitignore
   - [ ] Update build system to read from .env and inject into firmware
 - [ ] Install ESP-IDF v5.x
 - [ ] Verify hardware connection and flashing
@@ -31,8 +31,9 @@
   - [ ] Build and flash firmware
   - [ ] Verify CSI packets are being received
   - [ ] Validate CSI data quality
-- [ ] Web-based CSI visualization and analysis (laptop-side processing)
-  - [ ] Update ESP32 firmware to stream CSI data over serial
+- [~] Web-based CSI visualization and analysis (laptop-side processing)
+  - [x] Update ESP32 firmware to stream CSI data over serial
+  - [x] Create Python tool for reading CSI data (tools/read_csi.py)
   - [ ] Create HTML/JS web UI using WebSerial API
   - [ ] Real-time CSI data plotting (amplitude/phase visualization)
   - [ ] Record and save CSI datasets from browser

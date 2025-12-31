@@ -234,6 +234,7 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Initialization complete. Collecting CSI data...");
+    ESP_LOGI(TAG, "Streaming CSI data over serial (JSON format)...");
 
     // Main task can now do other work or just idle
     // CSI data is collected in callbacks, not in a loop

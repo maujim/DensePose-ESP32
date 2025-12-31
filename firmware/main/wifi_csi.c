@@ -129,6 +129,24 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info)
         s_user_callback(&processed, s_user_ctx);
     }
 
+    // Stream CSI data over serial in JSON format
+    // This allows real-time visualization and analysis on the laptop
+    // Format: {"ts":12345,"rssi":-45,"num":64,"amp":[...],"phase":[...]}
+    printf("{\"ts\":%lu,\"rssi\":%d,\"num\":%d,\"amp\":[",
+           processed.timestamp, processed.rssi, processed.num_subcarriers);
+
+    for (int i = 0; i < processed.num_subcarriers; i++) {
+        printf("%.2f%s", processed.amplitude[i],
+               (i < processed.num_subcarriers - 1) ? "," : "");
+    }
+
+    printf("],\"phase\":[");
+    for (int i = 0; i < processed.num_subcarriers; i++) {
+        printf("%.4f%s", processed.phase[i],
+               (i < processed.num_subcarriers - 1) ? "," : "");
+    }
+    printf("]}\n");
+
     // Log occasionally for debugging (every 100 packets)
     if (s_packets_received % 100 == 0) {
         ESP_LOGD(TAG, "CSI packet #%lu: %d subcarriers, RSSI=%d dBm",
