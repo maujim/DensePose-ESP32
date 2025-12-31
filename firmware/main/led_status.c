@@ -12,7 +12,6 @@
 #include "freertos/task.h"
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
-#include "driver/gpio.h"
 #include <stdlib.h>
 #include <string.h>
 
