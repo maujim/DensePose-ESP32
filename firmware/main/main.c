@@ -25,6 +25,8 @@
 #include "esp_netif.h"
 
 #include "wifi_csi.h"
+#include "led_status.h"
+#include "http_server.h"
 
 // Logging tag - used to identify log messages from this file
 static const char *TAG = "main";
@@ -37,6 +39,9 @@ static const char *TAG = "main";
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
+// Forward declaration for CSI callback
+static void csi_led_callback(const csi_data_t *data, void *ctx);
 
 // Connection retry counter
 static int s_retry_num = 0;
@@ -56,11 +61,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             case WIFI_EVENT_STA_START:
                 // WiFi station started, try to connect
                 ESP_LOGI(TAG, "WiFi started, connecting to AP...");
+                led_status_set(LED_STATUS_WIFI_DISCONNECTED);
                 esp_wifi_connect();
                 break;
 
             case WIFI_EVENT_STA_DISCONNECTED:
                 // Disconnected - try to reconnect
+                led_status_set(LED_STATUS_WIFI_DISCONNECTED);
                 if (s_retry_num < MAX_RETRY) {
                     esp_wifi_connect();
                     s_retry_num++;
@@ -80,6 +87,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Connected! IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        led_status_set(LED_STATUS_WIFI_CONNECTED);
     }
 }
 
@@ -91,8 +99,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
  */
 static esp_err_t wifi_init_sta(void)
 {
-    esp_err_t ret;
-
     // Create event group for synchronization
     s_wifi_event_group = xEventGroupCreate();
 
@@ -163,6 +169,18 @@ static esp_err_t wifi_init_sta(void)
 }
 
 /**
+ * @brief CSI callback for LED feedback
+ *
+ * Called each time a CSI packet is received.
+ * Updates the LED to blink green.
+ */
+static void csi_led_callback(const csi_data_t *data, void *ctx)
+{
+    // Notify LED task about CSI activity
+    led_status_csi_tick();
+}
+
+/**
  * @brief Print system information
  *
  * Useful for debugging - shows available memory, chip info, etc.
@@ -217,12 +235,27 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    // Initialize LED status
+    ret = led_status_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "LED initialization failed (non-critical): %s", esp_err_to_name(ret));
+    } else {
+        // Create LED status task
+        xTaskCreate(led_status_task, "led_task", 2048, NULL, 3, NULL);
+    }
+
     // Initialize WiFi in station mode
     ret = wifi_init_sta();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WiFi initialization failed!");
         // In a real application, you might want to retry or enter a config mode
         return;
+    }
+
+    // Initialize HTTP server
+    ret = http_server_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP server initialization failed: %s", esp_err_to_name(ret));
     }
 
     // Initialize CSI collection
@@ -233,8 +266,21 @@ void app_main(void)
         return;
     }
 
+    // Register LED callback for CSI activity
+    wifi_csi_register_callback(csi_led_callback, NULL);
+
+    // Set LED to CSI active mode once we start receiving packets
+    led_status_set(LED_STATUS_CSI_ACTIVE);
+
     ESP_LOGI(TAG, "Initialization complete. Collecting CSI data...");
-    ESP_LOGI(TAG, "Streaming CSI data over serial (JSON format)...");
+
+    // Get and display the IP address
+    esp_netif_ip_info_t ip_info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+        ESP_LOGI(TAG, "Web interface available at http://" IPSTR,
+                 IP2STR(&ip_info.ip));
+    }
 
     // Main task can now do other work or just idle
     // CSI data is collected in callbacks, not in a loop
