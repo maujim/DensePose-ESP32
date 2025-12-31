@@ -2,16 +2,16 @@
  * @file led_status.c
  * @brief WS2812 RGB LED status indicator implementation
  *
- * Uses RMT (Remote Control) peripheral for precise WS2812 timing.
- * The WS2812 requires 800kHz data with specific pulse widths.
+ * Uses RMT (Remote Control) peripheral with bytes encoder for WS2812.
+ * Based on ESP-IDF v5+ RMT API.
  */
 
 #include "led_status.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
+#include "driver/rmt_bytes_encoder.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,104 +19,86 @@ static const char *TAG = "led_status";
 
 // Hardware configuration
 #define LED_GPIO_PIN         21     // WS2812 data pin on ESP32-S3-Zero
-#define RMT_LED_CHANNEL      0      // RMT channel to use
 
-// WS2812 timing (nanoseconds) for 800kHz protocol
-#define T0H_NS   350    // 0 bit high time
-#define T0L_NS   800    // 0 bit low time
-#define T1H_NS   700    // 1 bit high time
-#define T1L_NS   600    // 1 bit low time
-#define RESET_NS 50000  // Reset/latch time
-
-// LED colors (GRB format for WS2812)
-#define COLOR_RED     0x00FF00   // G=0, R=255, B=0
-#define COLOR_GREEN   0xFF0000   // G=255, R=0, B=0
-#define COLOR_BLUE    0x0000FF   // G=0, R=0, B=255
-#define COLOR_OFF     0x000000
-
-// RMT configuration
-#define RMT_FREQ_HZ     80000000  // 80MHz RMT clock
+// RMT configuration - 1MHz resolution = 1 tick per microsecond
+#define RMT_RESOLUTION_HZ    1000000
 
 // State
 static rmt_channel_handle_t s_led_channel = NULL;
 static rmt_encoder_handle_t s_led_encoder = NULL;
 static led_status_t s_current_status = LED_STATUS_WIFI_DISCONNECTED;
 static uint32_t s_csi_tick_count = 0;
-static uint32_t s_last_blink_time = 0;
 
-/**
- * @brief Simple WS2812 encoder using RMT copy encoder
- *
- * WS2812 protocol:
- * - Each bit: high pulse + low pulse
- * - 0 bit: 350ns high, 800ns low
- * - 1 bit: 700ns high, 600ns low
- * - 24 bits per LED (GRB), MSB first
- * - 50us+ reset/latch between frames
- */
+// WS2812 timing configuration at 1MHz resolution (1 tick = 1us)
+// WS2812: 800kHz protocol, T0H=0.35us, T0L=0.8us, T1H=0.7us, T1L=0.6us
+static const rmt_bytes_encoder_config_t ws2812_encoder_config = {
+    .bit0 = {
+        .level0 = 1,
+        .duration0 = 0.35 * RMT_RESOLUTION_HZ,  // T0H = 0.35us
+        .level1 = 0,
+        .duration1 = 0.80 * RMT_RESOLUTION_HZ,  // T0L = 0.80us
+    },
+    .bit1 = {
+        .level0 = 1,
+        .duration0 = 0.70 * RMT_RESOLUTION_HZ,  // T1H = 0.70us
+        .level1 = 0,
+        .duration1 = 0.60 * RMT_RESOLUTION_HZ,  // T1L = 0.60us
+    },
+    .flags.msb_first = 1,  // WS2812 wants MSB first
+};
 
-// Convert RGB to GRB for WS2812
-static uint32_t rgb_to_grb(uint8_t r, uint8_t g, uint8_t b)
-{
-    return ((uint32_t)g << 16) | ((uint32_t)r << 8) | (uint32_t)b;
-}
+// LED colors (GRB format for WS2812)
+#define COLOR_RED     ((uint8_t[]){0, 255, 0})    // G=0, R=255, B=0
+#define COLOR_GREEN   ((uint8_t[]){255, 0, 0})    // G=255, R=0, B=0
+#define COLOR_BLUE    ((uint8_t[]){0, 0, 255})    // G=0, R=0, B=255
+#define COLOR_OFF     ((uint8_t[]){0, 0, 0})      // All off
 
 // Set LED color
-static esp_err_t led_set_color(uint32_t grb_color)
+static esp_err_t led_set_color(const uint8_t *grb)
 {
-    if (s_led_channel == NULL) {
+    if (s_led_channel == NULL || s_led_encoder == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Convert color to RMT symbols
-    // Each bit becomes 2 RMT items (high + low)
-    rmt_symbol_word_t symbols[48];  // 24 bits * 2
-    int symbol_idx = 0;
+    // WS2812 expects 24 bits: GRB (8 bits each)
+    uint8_t payload[3] = {grb[0], grb[1], grb[2]};
 
-    // MSB first for each color component
-    for (int i = 23; i >= 0; i--) {
-        bool bit = (grb_color >> i) & 1;
-        uint16_t t0h_ticks = (T0H_NS * RMT_FREQ_HZ) / 1000000000;
-        uint16_t t0l_ticks = (T0L_NS * RMT_FREQ_HZ) / 1000000000;
-        uint16_t t1h_ticks = (T1H_NS * RMT_FREQ_HZ) / 1000000000;
-        uint16_t t1l_ticks = (T1L_NS * RMT_FREQ_HZ) / 1000000000;
-
-        if (bit) {
-            symbols[symbol_idx].duration0 = t1h_ticks;
-            symbols[symbol_idx].level0 = 1;
-            symbols[symbol_idx].duration1 = t1l_ticks;
-            symbols[symbol_idx].level1 = 0;
-        } else {
-            symbols[symbol_idx].duration0 = t0h_ticks;
-            symbols[symbol_idx].level0 = 1;
-            symbols[symbol_idx].duration1 = t0l_ticks;
-            symbols[symbol_idx].level1 = 0;
-        }
-        symbol_idx++;
-    }
-
-    // Transmit
     rmt_transmit_config_t tx_config = {
-        .loop_count = 0,
+        .loop_count = 0,  // No loop
     };
 
-    return rmt_transmit(s_led_channel, symbols, sizeof(symbols), &tx_config);
+    esp_err_t ret = rmt_transmit(s_led_channel, s_led_encoder, payload, sizeof(payload), &tx_config);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    // Wait for transmission to complete
+    return rmt_tx_wait_all_done(s_led_channel, pdMS_TO_TICKS(100));
 }
 
 esp_err_t led_status_init(void)
 {
     ESP_LOGI(TAG, "Initializing WS2812 RGB LED on GPIO %d...", LED_GPIO_PIN);
 
+    esp_err_t ret;
+
+    // Create RMT bytes encoder for WS2812 protocol
+    ret = rmt_new_bytes_encoder(&ws2812_encoder_config, &s_led_encoder);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create bytes encoder: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // RMT TX channel configuration
     rmt_tx_channel_config_t tx_chan_config = {
         .gpio_num = LED_GPIO_PIN,
         .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = RMT_FREQ_HZ,
+        .resolution_hz = RMT_RESOLUTION_HZ,
         .mem_block_symbols = 64,
         .trans_queue_depth = 4,
     };
 
-    esp_err_t ret = rmt_new_tx_channel(&tx_chan_config, &s_led_channel);
+    ret = rmt_new_tx_channel(&tx_chan_config, &s_led_channel);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create RMT channel: %s", esp_err_to_name(ret));
         return ret;
@@ -131,11 +113,11 @@ esp_err_t led_status_init(void)
 
     // Initial color test
     led_set_color(COLOR_RED);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
     led_set_color(COLOR_GREEN);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
     led_set_color(COLOR_BLUE);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
     led_set_color(COLOR_OFF);
 
     ESP_LOGI(TAG, "RGB LED initialized");
