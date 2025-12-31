@@ -10,3 +10,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # Define the project
 project(densepose_esp32)
+
+# Include the test component
+# This makes tests discoverable by the build system
+set(EXTRA_COMPONENT_DIRS "test")
