@@ -34,14 +34,21 @@ static const char *TAG = "wifi_csi";
 
 // CSI configuration
 // These settings control what CSI data we receive
+// Note: ESP32-S3 supports WiFi 6 (802.11ax/HE), so it uses wifi_csi_acquire_config_t
+// which has different fields than the basic wifi_csi_config_t used on older ESP32
 static wifi_csi_config_t csi_config = {
-    .lltf_en = true,           // Legacy Long Training Field - good for CSI
-    .htltf_en = true,          // HT Long Training Field - 802.11n
-    .stbc_htltf2_en = true,    // Space-Time Block Coding HT-LTF2
-    .ltf_merge_en = true,      // Merge LTF data for better accuracy
-    .channel_filter_en = true, // Apply channel filter
-    .manu_scale = false,       // Automatic scaling (recommended)
-    .shift = false,            // No bit shift
+    .enable = 1,                  // Enable CSI acquisition
+    .acquire_csi_legacy = 1,      // Acquire L-LTF from 802.11g packets
+    .acquire_csi_ht20 = 1,        // Acquire HT-LTF from HT20 packets
+    .acquire_csi_ht40 = 1,        // Acquire HT-LTF from HT40 packets
+    .acquire_csi_su = 1,          // Acquire HE-LTF from HE20 SU packets (WiFi 6)
+    .acquire_csi_mu = 1,          // Acquire HE-LTF from HE20 MU packets (WiFi 6)
+    .acquire_csi_dcm = 1,         // Acquire HE-LTF from DCM packets
+    .acquire_csi_beamformed = 1,  // Acquire HE-LTF from beamformed packets
+    .acquire_csi_he_stbc = 0,     // Use complete HE-LTF1 for STBC
+    .val_scale_cfg = 0,           // Automatic scaling
+    .dump_ack_en = 0,             // Don't dump ACK frames
+    .reserved = 0,
 };
 
 // State variables

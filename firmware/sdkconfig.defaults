@@ -1,0 +1,21 @@
+# DensePose-ESP32 SDK Configuration Defaults
+# These settings are applied when running idf.py set-target or idf.py reconfigure
+
+# WiFi CSI (Channel State Information) - REQUIRED for this project
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+
+# PSRAM configuration for ESP32-S3
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Optimize for performance
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# Increase WiFi task stack size (CSI processing needs more stack)
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+
+# Logging level (set to Debug for development)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
