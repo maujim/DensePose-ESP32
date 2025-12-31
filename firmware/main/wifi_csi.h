@@ -36,7 +36,7 @@ typedef struct {
     float phase[64];        // Phase (radians) for each subcarrier
     uint8_t num_subcarriers; // Actual number of valid subcarriers
     int8_t rssi;            // Received Signal Strength Indicator
-    uint32_t timestamp;     // Timestamp in microseconds
+    uint32_t timestamp;     // Timestamp in milliseconds
 } csi_data_t;
 
 /**
