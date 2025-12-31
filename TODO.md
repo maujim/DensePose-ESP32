@@ -31,61 +31,62 @@
   - [ ] Build and flash firmware
   - [ ] Verify CSI packets are being received
   - [ ] Validate CSI data quality
-- [ ] Data logging and visualization
-  - [ ] Add serial output for CSI data
-  - [ ] Create Python script to capture serial data
-  - [ ] Plot amplitude/phase over time
+- [ ] Web-based CSI visualization and analysis (laptop-side processing)
+  - [ ] Update ESP32 firmware to stream CSI data over serial
+  - [ ] Create HTML/JS web UI using WebSerial API
+  - [ ] Real-time CSI data plotting (amplitude/phase visualization)
+  - [ ] Record and save CSI datasets from browser
   - [ ] Test with/without human presence
 
-## Phase 3: Signal Processing & Feature Extraction
-- [ ] Implement noise filtering
-  - [ ] Remove DC offset
+## Phase 3: Signal Processing & Feature Extraction (Laptop-Side)
+- [ ] Implement noise filtering in web UI
+  - [ ] Remove DC offset (JavaScript)
   - [ ] Apply moving average filter
   - [ ] Handle outliers/bad packets
-- [ ] Feature extraction from CSI
+- [ ] Feature extraction from CSI (JavaScript/Python)
   - [ ] Time-domain features (variance, mean)
   - [ ] Frequency analysis (FFT if needed)
   - [ ] Subcarrier selection (identify most sensitive)
 - [ ] Data collection for training
   - [ ] Set up controlled environment
-  - [ ] Collect CSI samples (empty room baseline)
+  - [ ] Collect CSI samples via web UI (empty room baseline)
   - [ ] Collect CSI with human present
-  - [ ] Label different poses/activities
+  - [ ] Label different poses/activities in browser
+  - [ ] Export labeled dataset for training
 
 ## Phase 4: Human Presence Detection (Simplified ML)
-- [ ] Training pipeline (on PC)
+- [ ] Laptop-side inference (initial implementation)
   - [ ] Prepare dataset (CSI → binary label: present/absent)
   - [ ] Train simple classifier (Random Forest, SVM, or small NN)
   - [ ] Evaluate accuracy
+  - [ ] Run inference in browser (TensorFlow.js) or Python backend
+  - [ ] Display real-time presence detection in web UI
+- [ ] ESP32 deployment (optimization phase)
   - [ ] Convert model to TFLite
   - [ ] Quantize to INT8
-- [ ] Deploy to ESP32
-  - [ ] Integrate TFLite Micro
+  - [ ] Integrate TFLite Micro into firmware
   - [ ] Load model from flash
-  - [ ] Run inference on CSI data
+  - [ ] Run on-device inference
   - [ ] Test latency and memory usage
-- [ ] Validation
-  - [ ] Test detection accuracy
-  - [ ] Measure power consumption
-  - [ ] Optimize if needed
+  - [ ] Compare on-device vs laptop performance
 
 ## Phase 5: Pose Estimation (Full Implementation)
-- [ ] Research model architecture
+- [ ] Laptop-side pose estimation (initial implementation)
   - [ ] Review DensePose paper network design
-  - [ ] Design ESP32-compatible simplified version
-  - [ ] Determine feasibility (memory/compute constraints)
-- [ ] Data collection for pose training
-  - [ ] Set up camera + WiFi synchronized recording
+  - [ ] Set up camera + CSI synchronized recording via web UI
   - [ ] Collect paired CSI + pose labels
   - [ ] Generate DensePose annotations from images
-- [ ] Model training
-  - [ ] Train pose estimation model
+  - [ ] Train pose estimation model on laptop
+  - [ ] Run inference in browser (TensorFlow.js) or Python backend
+  - [ ] Display real-time pose visualization in web UI
+- [ ] ESP32 deployment (if feasible)
+  - [ ] Design ESP32-compatible simplified version
+  - [ ] Determine feasibility (memory/compute constraints)
   - [ ] Knowledge distillation for size reduction
-  - [ ] Quantization for ESP32 deployment
-- [ ] Deployment and testing
+  - [ ] Quantization and optimization
   - [ ] Flash model to ESP32
-  - [ ] Real-time pose inference
-  - [ ] Benchmark performance
+  - [ ] On-device pose inference
+  - [ ] Benchmark and compare performance
 
 ## Phase 6: Optimization & Refinement
 - [ ] Memory optimization
@@ -102,14 +103,18 @@
   - [ ] Measure battery life
 
 ## Phase 7: Documentation & Demo
-- [ ] Create demo application
-  - [ ] Serial output visualization
-  - [ ] Optional: BLE/WiFi output to phone
+- [ ] Polish web UI demo
+  - [ ] Clean up interface design
+  - [ ] Add controls for data collection/inference
+  - [ ] Export results and visualizations
 - [ ] Write technical report
-  - [ ] Implementation details
+  - [ ] Implementation details (laptop vs on-device)
   - [ ] Performance benchmarks
   - [ ] Comparison with paper results
 - [ ] Create README with setup guide
+  - [ ] Web UI usage instructions
+  - [ ] ESP32 firmware setup
+  - [ ] Model training guide
 - [ ] Record demonstration video
 
 ---
