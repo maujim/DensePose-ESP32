@@ -211,11 +211,22 @@ void app_main(void)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         // NVS partition was corrupted, erase and reinitialize
-        ESP_LOGW(TAG, "NVS flash erase required");
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_LOGW(TAG, "NVS partition corrupted or version mismatch, erasing...");
+        ret = nvs_flash_erase();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to erase NVS flash: %s", esp_err_to_name(ret));
+            return;
+        }
         ret = nvs_flash_init();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize NVS after erase: %s", esp_err_to_name(ret));
+            return;
+        }
+        ESP_LOGI(TAG, "NVS reinitialized successfully");
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(ret));
+        return;
     }
-    ESP_ERROR_CHECK(ret);
 
     // Initialize WiFi in station mode
     ret = wifi_init_sta();
