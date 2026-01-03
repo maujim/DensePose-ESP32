@@ -1,0 +1,20 @@
+# Machine Learning dependencies for DensePose-ESP32 training
+
+# Core ML framework
+tensorflow>=2.13.0,<2.16.0
+
+# Numerical computing
+numpy>=1.24.0
+
+# Data visualization
+matplotlib>=3.7.0
+
+# Serial communication (for data collection)
+pyserial>=3.5
+
+# Command line parsing (built-in, but listed for reference)
+# argparse
+
+# Data handling
+# json (built-in)
+# pathlib (built-in)
