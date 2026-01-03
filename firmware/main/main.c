@@ -25,6 +25,7 @@
 #include "esp_netif.h"
 
 #include "wifi_csi.h"
+#include "pose_inference.h"
 
 // Logging tag - used to identify log messages from this file
 static const char *TAG = "main";
@@ -41,6 +42,45 @@ static EventGroupHandle_t s_wifi_event_group;
 // Connection retry counter
 static int s_retry_num = 0;
 #define MAX_RETRY CONFIG_WIFI_MAXIMUM_RETRY
+
+/**
+ * @brief Pose detection callback
+ *
+ * Called when pose inference results are available.
+ */
+static void pose_detection_callback(const pose_result_t *result, void *user_ctx)
+{
+    // Print pose detection results
+    const char *pose_names[] = {
+        "Empty", "Present", "Moving", "Walking", "Sitting", "Standing", "Unknown"
+    };
+
+    ESP_LOGI(TAG, "=== POSE DETECTION ===");
+    ESP_LOGI(TAG, "  Human Detected: %s", result->human_detected ? "YES" : "NO");
+    ESP_LOGI(TAG, "  Pose Class: %s", pose_names[result->pose_class % 7]);
+    ESP_LOGI(TAG, "  Confidence: %.2f", result->confidence);
+    ESP_LOGI(TAG, "  Motion Level: %.2f", result->motion_level);
+    ESP_LOGI(TAG, "  Inference Time: %lu ms", result->inference_time_ms);
+    ESP_LOGI(TAG, "  Stats: amp_mean=%.2f, amp_std=%.2f, phase_var=%.4f",
+             result->amplitude_mean, result->amplitude_std, result->phase_variance);
+    ESP_LOGI(TAG, "=====================");
+
+    // Stream pose results over serial in JSON format
+    printf("{\"pose_result\":true,\"detected\":%s,\"pose_class\":%d,\"confidence\":%.2f,\"motion\":%.2f}\n",
+           result->human_detected ? "true" : "false",
+           result->pose_class,
+           result->confidence,
+           result->motion_level);
+}
+
+/**
+ * @brief CSI callback that forwards data to pose inference
+ */
+static void csi_to_pose_callback(const csi_data_t *csi, void *ctx)
+{
+    // Forward CSI data to pose estimation module
+    pose_process_csi(csi->amplitude, csi->phase, csi->num_subcarriers, csi->rssi);
+}
 
 /**
  * @brief WiFi and IP event handler
@@ -233,8 +273,32 @@ void app_main(void)
         return;
     }
 
+    // Initialize pose estimation module
+    pose_config_t pose_cfg = {
+        .window_size_ms = 500,
+        .sampling_rate_hz = 100,
+        .num_subcarriers = 52,
+        .use_amplitude = true,
+        .use_phase = true,
+        .enable_presence_detection = true,
+        .enable_pose_classification = false,
+    };
+
+    ret = pose_init(&pose_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Pose estimation initialization failed!");
+        return;
+    }
+
+    // Register CSI callback to forward data to pose inference
+    wifi_csi_register_callback(csi_to_pose_callback, NULL);
+
+    // Register pose detection result callback
+    pose_register_callback(pose_detection_callback, NULL);
+
     ESP_LOGI(TAG, "Initialization complete. Collecting CSI data...");
     ESP_LOGI(TAG, "Streaming CSI data over serial (JSON format)...");
+    ESP_LOGI(TAG, "Pose estimation is active - results will appear in serial output");
 
     // Main task can now do other work or just idle
     // CSI data is collected in callbacks, not in a loop
