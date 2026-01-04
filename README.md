@@ -168,9 +168,10 @@ python3 collect_csi_dataset.py /dev/ttyUSB0
 
 ```bash
 cd models/training
-pip install -r requirements.txt
+uv venv --python 3.11
+uv pip install -r requirements.txt
 
-python3 train_pose_model.py ../../datasets/csi_dataset_20240103.json
+uv train_pose_model.py ../../datasets/csi_dataset_20240103.json
 
 # Generates:
 # - pose_model.keras (Keras model)
