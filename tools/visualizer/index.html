@@ -3,726 +3,368 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DensePose-ESP32 CSI Visualizer</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <title>CSI Visualizer</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            padding: 20px;
-            min-height: 100vh;
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 10px;
         }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
         .header {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .header h1 {
-            color: #667eea;
-            font-size: 2.5em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #252525;
             margin-bottom: 10px;
         }
-
-        .header p {
-            color: #666;
-            font-size: 1.1em;
+        .header h1 { font-size: 16px; font-weight: normal; }
+        .status {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
         }
-
-        .status-panel {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 20px;
-        }
-
-        .status-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .status-item {
-            padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-        }
-
-        .status-item.connected {
-            background: #10b981;
-            color: white;
-        }
-
-        .status-item.disconnected {
-            background: #ef4444;
-            color: white;
-        }
-
-        .status-item.info {
-            background: #f3f4f6;
-        }
-
-        .status-item h3 {
-            font-size: 0.9em;
-            margin-bottom: 5px;
-            opacity: 0.9;
-        }
-
-        .status-item .value {
-            font-size: 1.5em;
-            font-weight: bold;
-        }
-
-        .controls {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1em;
+        .status.disconnected { background: #5c2a2a; }
+        .status.connected { background: #2a5c2a; }
+        .controls { display: flex; gap: 8px; }
+        button {
+            background: #333;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            padding: 6px 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
+            font-family: monospace;
+            font-size: 12px;
         }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-secondary {
-            background: #6b7280;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #4b5563;
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .charts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        button:hover { background: #444; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .stats {
+            display: flex;
             gap: 20px;
-            margin-bottom: 20px;
+            padding: 10px;
+            background: #252525;
+            margin-bottom: 10px;
+            font-size: 12px;
         }
-
-        .chart-container {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .chart-container h2 {
-            color: #667eea;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-
-        .pose-panel {
-            background: white;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 20px;
-        }
-
-        .pose-grid {
+        .stat-item span { color: #888; }
+        .charts {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
         }
-
-        .pose-item {
-            padding: 20px;
-            border-radius: 10px;
-            background: #f9fafb;
-            border-left: 4px solid #667eea;
+        .chart-box {
+            background: #252525;
+            padding: 10px;
         }
-
-        .pose-item.detected {
-            background: #d1fae5;
-            border-left-color: #10b981;
-        }
-
-        .pose-item h3 {
-            font-size: 0.9em;
-            color: #6b7280;
+        .chart-box h2 {
+            font-size: 12px;
+            font-weight: normal;
+            color: #888;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-
-        .pose-item .value {
-            font-size: 1.8em;
-            font-weight: bold;
-            color: #1f2937;
+        .help-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid #555;
+            font-size: 10px;
+            color: #666;
+            cursor: help;
+            position: relative;
         }
-
-        .pose-confidence {
-            margin-top: 10px;
+        .help-icon:hover { border-color: #888; color: #aaa; }
+        .help-icon .tooltip {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 280px;
+            background: #333;
+            border: 1px solid #444;
+            padding: 8px;
+            font-size: 11px;
+            color: #ccc;
+            line-height: 1.4;
+            z-index: 100;
+            font-weight: normal;
         }
-
-        .confidence-bar {
-            height: 8px;
-            background: #e5e7eb;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .confidence-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            transition: width 0.3s ease;
-        }
-
-        .log-container {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .log-container h2 {
-            color: #667eea;
-            margin-bottom: 15px;
-        }
-
+        .help-icon:hover .tooltip { display: block; }
+        canvas { width: 100%; height: 200px; }
         .log {
-            background: #1f2937;
-            color: #10b981;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            max-height: 300px;
+            background: #252525;
+            padding: 10px;
+            height: 150px;
             overflow-y: auto;
+            font-size: 11px;
         }
-
-        .log-entry {
-            margin-bottom: 5px;
+        .log-line { color: #666; }
+        .log-line.data { color: #4a9; }
+        .log-line.error { color: #a44; }
+        .serial-log {
+            background: #1a1a1a;
+            padding: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 10px;
+            color: #6a6;
+            white-space: pre;
+            border: 1px solid #333;
         }
-
-        .log-entry.error {
-            color: #ef4444;
-        }
-
-        .log-entry.warning {
-            color: #f59e0b;
-        }
-
-        @media (max-width: 768px) {
-            .charts-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .header h1 {
-                font-size: 1.8em;
-            }
+        @media (max-width: 800px) {
+            .charts { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>DensePose-ESP32 Visualizer</h1>
-            <p>Real-time WiFi CSI Analysis and Pose Detection</p>
+    <div class="header">
+        <h1>CSI Visualizer</h1>
+        <div class="controls">
+            <span class="status disconnected" id="status">disconnected</span>
+            <button id="connectBtn">connect</button>
+            <button id="clearBtn" disabled>clear</button>
         </div>
+    </div>
 
-        <div class="status-panel">
-            <div class="status-grid">
-                <div class="status-item disconnected" id="connectionStatus">
-                    <h3>Serial Connection</h3>
-                    <div class="value" id="connectionText">Disconnected</div>
-                </div>
-                <div class="status-item info">
-                    <h3>Packets Received</h3>
-                    <div class="value" id="packetCount">0</div>
-                </div>
-                <div class="status-item info">
-                    <h3>Inferences</h3>
-                    <div class="value" id="inferenceCount">0</div>
-                </div>
-                <div class="status-item info">
-                    <h3>Update Rate</h3>
-                    <div class="value" id="updateRate">0 Hz</div>
-                </div>
-            </div>
+    <div class="stats">
+        <div class="stat-item"><span>packets:</span> <span id="packets">0</span></div>
+        <div class="stat-item"><span>rate:</span> <span id="rate">0</span> Hz</div>
+        <div class="stat-item"><span>rssi:</span> <span id="rssi">--</span> dBm</div>
+        <div class="stat-item"><span>subcarriers:</span> <span id="subcarriers">0</span></div>
+    </div>
 
-            <div class="controls">
-                <button class="btn btn-primary" id="connectBtn">Connect Serial</button>
-                <button class="btn btn-secondary" id="clearBtn" disabled>Clear Data</button>
-                <button class="btn btn-secondary" id="exportBtn" disabled>Export Data</button>
-                <button class="btn btn-danger" id="disconnectBtn" disabled>Disconnect</button>
-            </div>
+    <div class="charts">
+        <div class="chart-box">
+            <h2>amplitude <span class="help-icon">?<span class="tooltip">Signal strength per WiFi subcarrier. WiFi splits its channel into ~64 frequencies. Each point shows how strong that frequency arrived. Human bodies absorb/reflect signals, causing dips and peaks. X-axis: subcarrier index (0-63). Y-axis: signal strength (higher = stronger).</span></span></h2>
+            <canvas id="ampChart"></canvas>
         </div>
-
-        <div class="pose-panel">
-            <h2 style="color: #667eea; margin-bottom: 20px;">Pose Detection Results</h2>
-            <div class="pose-grid">
-                <div class="pose-item" id="poseDetected">
-                    <h3>Human Detected</h3>
-                    <div class="value" id="detectedValue">NO</div>
-                </div>
-                <div class="pose-item">
-                    <h3>Pose Class</h3>
-                    <div class="value" id="poseClass">Empty</div>
-                </div>
-                <div class="pose-item">
-                    <h3>Confidence</h3>
-                    <div class="value" id="confidenceValue">0%</div>
-                    <div class="pose-confidence">
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" id="confidenceBar" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="pose-item">
-                    <h3>Motion Level</h3>
-                    <div class="value" id="motionValue">0.00</div>
-                </div>
-            </div>
+        <div class="chart-box">
+            <h2>phase <span class="help-icon">?<span class="tooltip">Signal timing per subcarrier. When signals bounce off objects, they arrive slightly delayed, shifting the wave's phase. Human movement causes phase changes over time. X-axis: subcarrier index. Y-axis: phase in radians (-π to +π). Rapid changes = motion detected.</span></span></h2>
+            <canvas id="phaseChart"></canvas>
         </div>
+    </div>
 
-        <div class="charts-grid">
-            <div class="chart-container">
-                <h2>CSI Amplitude (Real-time)</h2>
-                <canvas id="amplitudeChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <h2>CSI Phase (Real-time)</h2>
-                <canvas id="phaseChart"></canvas>
-            </div>
-        </div>
+    <div class="log" id="log"></div>
 
-        <div class="charts-grid">
-            <div class="chart-container">
-                <h2>Amplitude Statistics</h2>
-                <canvas id="amplitudeStatsChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <h2>Inference Timeline</h2>
-                <canvas id="inferenceChart"></canvas>
-            </div>
-        </div>
-
-        <div class="log-container">
-            <h2>Activity Log</h2>
-            <div class="log" id="activityLog"></div>
-        </div>
+    <div class="chart-box" style="margin-top: 10px;">
+        <h2>serial output <span id="serialCount">(0 lines, max 1M)</span></h2>
+        <div class="serial-log" id="serialLog"></div>
     </div>
 
     <script>
         // State
         let port = null;
         let reader = null;
-        let writer = null;
+        let buffer = '';
         let packetCount = 0;
-        let inferenceCount = 0;
         let startTime = null;
-        let csiDataHistory = [];
-        let amplitudeStatsHistory = [];
-        let inferenceHistory = [];
+        let lastAmp = [];
+        let lastPhase = [];
+        let serialLines = [];
+        const MAX_SERIAL_LINES = 1000000;
 
-        // Chart configurations
-        const MAX_DATA_POINTS = 100;
-        const SUBCARRIER_LIMIT = 20; // Show first 20 subcarriers for clarity
-
-        // Initialize charts
-        const amplitudeChart = new Chart(document.getElementById('amplitudeChart'), {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: []
-            },
-            options: {
-                responsive: true,
-                animation: { duration: 0 },
-                scales: {
-                    x: { title: { display: true, text: 'Subcarrier' } },
-                    y: { title: { display: true, text: 'Amplitude' }, min: 0 }
-                }
-            }
-        });
-
-        const phaseChart = new Chart(document.getElementById('phaseChart'), {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: []
-            },
-            options: {
-                responsive: true,
-                animation: { duration: 0 },
-                scales: {
-                    x: { title: { display: true, text: 'Subcarrier' } },
-                    y: { title: { display: true, text: 'Phase (radians)' }, min: -Math.PI, max: Math.PI }
-                }
-            }
-        });
-
-        const amplitudeStatsChart = new Chart(document.getElementById('amplitudeStatsChart'), {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'Mean',
-                        data: [],
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        fill: true
-                    },
-                    {
-                        label: 'Std Dev',
-                        data: [],
-                        borderColor: '#764ba2',
-                        backgroundColor: 'rgba(118, 75, 162, 0.1)',
-                        fill: true
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                animation: { duration: 0 },
-                scales: {
-                    x: { title: { display: true, text: 'Time' } },
-                    y: { title: { display: true, text: 'Amplitude' } }
-                }
-            }
-        });
-
-        const inferenceChart = new Chart(document.getElementById('inferenceChart'), {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Motion Level',
-                    data: [],
-                    backgroundColor: 'rgba(102, 126, 234, 0.7)'
-                }]
-            },
-            options: {
-                responsive: true,
-                animation: { duration: 300 },
-                scales: {
-                    x: { title: { display: true, text: 'Inference #' } },
-                    y: { title: { display: true, text: 'Motion Level' }, min: 0, max: 1 }
-                }
-            }
-        });
-
-        // DOM Elements
+        // DOM
+        const statusEl = document.getElementById('status');
         const connectBtn = document.getElementById('connectBtn');
-        const disconnectBtn = document.getElementById('disconnectBtn');
         const clearBtn = document.getElementById('clearBtn');
-        const exportBtn = document.getElementById('exportBtn');
-        const connectionStatus = document.getElementById('connectionStatus');
-        const connectionText = document.getElementById('connectionText');
-        const packetCountEl = document.getElementById('packetCount');
-        const inferenceCountEl = document.getElementById('inferenceCount');
-        const updateRateEl = document.getElementById('updateRate');
-        const activityLog = document.getElementById('activityLog');
-        const poseDetectedEl = document.getElementById('poseDetected');
-        const detectedValueEl = document.getElementById('detectedValue');
-        const poseClassEl = document.getElementById('poseClass');
-        const confidenceValueEl = document.getElementById('confidenceValue');
-        const confidenceBarEl = document.getElementById('confidenceBar');
-        const motionValueEl = document.getElementById('motionValue');
+        const packetsEl = document.getElementById('packets');
+        const rateEl = document.getElementById('rate');
+        const rssiEl = document.getElementById('rssi');
+        const subcarriersEl = document.getElementById('subcarriers');
+        const logEl = document.getElementById('log');
+        const ampCanvas = document.getElementById('ampChart');
+        const phaseCanvas = document.getElementById('phaseChart');
+        const serialLogEl = document.getElementById('serialLog');
+        const serialCountEl = document.getElementById('serialCount');
 
-        // Logging
-        function log(message, type = 'info') {
-            const entry = document.createElement('div');
-            entry.className = `log-entry ${type}`;
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            activityLog.appendChild(entry);
-            activityLog.scrollTop = activityLog.scrollHeight;
+        // Canvas contexts
+        const ampCtx = ampCanvas.getContext('2d');
+        const phaseCtx = phaseCanvas.getContext('2d');
+
+        function log(msg, type = '') {
+            const line = document.createElement('div');
+            line.className = 'log-line ' + type;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(line);
+            if (logEl.children.length > 100) logEl.removeChild(logEl.firstChild);
+            logEl.scrollTop = logEl.scrollHeight;
         }
 
-        // Serial connection
-        async function connectSerial() {
+        function appendSerial(line) {
+            serialLines.push(line);
+            if (serialLines.length > MAX_SERIAL_LINES) {
+                serialLines.shift();
+            }
+            // Only render last 500 lines for performance
+            const displayLines = serialLines.slice(-500);
+            serialLogEl.textContent = displayLines.join('\n');
+            serialLogEl.scrollTop = serialLogEl.scrollHeight;
+            serialCountEl.textContent = `(${serialLines.length.toLocaleString()} lines, max 1M)`;
+        }
+
+        function drawChart(ctx, data, color, minY, maxY) {
+            const canvas = ctx.canvas;
+            const w = canvas.width = canvas.offsetWidth * 2;
+            const h = canvas.height = canvas.offsetHeight * 2;
+            ctx.clearRect(0, 0, w, h);
+
+            if (data.length === 0) return;
+
+            // Grid
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 5; i++) {
+                const y = (h / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            // Data
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            const step = w / (data.length - 1 || 1);
+            for (let i = 0; i < data.length; i++) {
+                const x = i * step;
+                const normalized = (data[i] - minY) / (maxY - minY || 1);
+                const y = h - normalized * h;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        function processLine(line) {
+            line = line.trim();
+            if (!line.startsWith('{')) return;
+
+            try {
+                const data = JSON.parse(line);
+                if (!data.amp || !data.phase) return;
+
+                packetCount++;
+                packetsEl.textContent = packetCount;
+                rssiEl.textContent = data.rssi;
+                subcarriersEl.textContent = data.num || data.amp.length;
+
+                if (startTime) {
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    rateEl.textContent = (packetCount / elapsed).toFixed(1);
+                }
+
+                lastAmp = data.amp;
+                lastPhase = data.phase;
+
+                // Draw charts
+                const maxAmp = Math.max(...lastAmp, 1);
+                drawChart(ampCtx, lastAmp, '#4a9', 0, maxAmp);
+                drawChart(phaseCtx, lastPhase, '#94a', -Math.PI, Math.PI);
+
+            } catch (e) {
+                // Invalid JSON, ignore
+            }
+        }
+
+        async function connect() {
             try {
                 port = await navigator.serial.requestPort();
                 await port.open({ baudRate: 115200 });
 
-                connectionStatus.classList.remove('disconnected');
-                connectionStatus.classList.add('connected');
-                connectionText.textContent = 'Connected';
-                connectBtn.disabled = true;
-                disconnectBtn.disabled = false;
+                statusEl.textContent = 'connected';
+                statusEl.className = 'status connected';
+                connectBtn.textContent = 'disconnect';
                 clearBtn.disabled = false;
-                exportBtn.disabled = false;
-
-                log('Serial port connected successfully');
-
-                const textDecoder = new TextDecoderStream();
-                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-                reader = textDecoder.readable.getReader();
                 startTime = Date.now();
 
-                readSerialLoop();
+                log('connected to serial port');
 
-            } catch (error) {
-                log(`Failed to connect: ${error.message}`, 'error');
-            }
-        }
+                const decoder = new TextDecoderStream();
+                port.readable.pipeTo(decoder.writable);
+                reader = decoder.readable.getReader();
 
-        async function disconnectSerial() {
-            if (reader) {
-                await reader.cancel();
-                reader = null;
-            }
-
-            if (port) {
-                await port.close();
-                port = null;
-            }
-
-            connectionStatus.classList.remove('connected');
-            connectionStatus.classList.add('disconnected');
-            connectionText.textContent = 'Disconnected';
-            connectBtn.disabled = false;
-            disconnectBtn.disabled = true;
-            clearBtn.disabled = true;
-            exportBtn.disabled = true;
-
-            log('Disconnected from serial port');
-        }
-
-        async function readSerialLoop() {
-            try {
+                // Read loop
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) break;
 
-                    const lines = value.split('\n');
+                    // Buffer incoming data and split by newlines
+                    buffer += value;
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
                     for (const line of lines) {
-                        processSerialLine(line);
+                        if (line.trim()) {
+                            appendSerial(line);
+                        }
+                        processLine(line);
                     }
                 }
-            } catch (error) {
-                log(`Read error: ${error.message}`, 'error');
+            } catch (e) {
+                log('error: ' + e.message, 'error');
             }
         }
 
-        function processSerialLine(line) {
-            line = line.trim();
-            if (!line || !line.startsWith('{')) return;
-
+        async function disconnect() {
             try {
-                const data = JSON.parse(line);
-
-                if (data.ts && data.amp) {
-                    // CSI data packet
-                    packetCount++;
-                    packetCountEl.textContent = packetCount;
-                    updateCharts(data);
-                    updateStats();
+                if (reader) {
+                    await reader.cancel();
+                    reader = null;
                 }
-
-                if (data.pose_result) {
-                    // Pose detection result
-                    inferenceCount++;
-                    inferenceCountEl.textContent = inferenceCount;
-                    updatePoseDetection(data);
+                if (port) {
+                    await port.close();
+                    port = null;
                 }
-
-            } catch (error) {
-                // Ignore invalid JSON
-            }
-        }
-
-        function updateCharts(data) {
-            // Update amplitude chart
-            const labels = data.amp.slice(0, SUBCARRIER_LIMIT).map((_, i) => i);
-            amplitudeChart.data.labels = labels;
-            amplitudeChart.data.datasets = [{
-                label: `RSSI: ${data.rssi} dBm`,
-                data: data.amp.slice(0, SUBCARRIER_LIMIT),
-                borderColor: '#667eea',
-                tension: 0.1
-            }];
-            amplitudeChart.update('none');
-
-            // Update phase chart
-            phaseChart.data.labels = labels;
-            phaseChart.data.datasets = [{
-                label: 'Phase',
-                data: data.phase.slice(0, SUBCARRIER_LIMIT),
-                borderColor: '#764ba2',
-                tension: 0.1
-            }];
-            phaseChart.update('none');
-
-            // Store amplitude statistics
-            const mean = data.amp.reduce((a, b) => a + b, 0) / data.amp.length;
-            const variance = data.amp.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / data.amp.length;
-            const std = Math.sqrt(variance);
-
-            amplitudeStatsHistory.push({ mean, std, timestamp: data.ts });
-            if (amplitudeStatsHistory.length > MAX_DATA_POINTS) {
-                amplitudeStatsHistory.shift();
+            } catch (e) {
+                // Ignore close errors
             }
 
-            amplitudeStatsChart.data.labels = amplitudeStatsHistory.map((_, i) => i);
-            amplitudeStatsChart.data.datasets[0].data = amplitudeStatsHistory.map(d => d.mean);
-            amplitudeStatsChart.data.datasets[1].data = amplitudeStatsHistory.map(d => d.std);
-            amplitudeStatsChart.update('none');
+            statusEl.textContent = 'disconnected';
+            statusEl.className = 'status disconnected';
+            connectBtn.textContent = 'connect';
+            clearBtn.disabled = true;
+            buffer = '';
+            log('disconnected');
         }
 
-        function updatePoseDetection(data) {
-            const detected = data.detected === true || data.detected === 'true';
-            const poseClasses = ['Empty', 'Present', 'Moving', 'Walking', 'Sitting', 'Standing', 'Unknown'];
-            const poseClass = poseClasses[data.pose_class] || 'Unknown';
-            const confidence = (data.confidence * 100).toFixed(1);
-            const motion = parseFloat(data.motion).toFixed(2);
-
-            detectedValueEl.textContent = detected ? 'YES' : 'NO';
-            poseClassEl.textContent = poseClass;
-            confidenceValueEl.textContent = `${confidence}%`;
-            confidenceBarEl.style.width = `${confidence}%`;
-            motionValueEl.textContent = motion;
-
-            if (detected) {
-                poseDetectedEl.classList.add('detected');
-            } else {
-                poseDetectedEl.classList.remove('detected');
-            }
-
-            // Update inference chart
-            inferenceHistory.push({
-                motion: data.motion,
-                detected: detected,
-                pose: poseClass
-            });
-            if (inferenceHistory.length > MAX_DATA_POINTS) {
-                inferenceHistory.shift();
-            }
-
-            inferenceChart.data.labels = inferenceHistory.map((_, i) => i + 1);
-            inferenceChart.data.datasets[0].data = inferenceHistory.map(d => d.motion);
-            inferenceChart.data.datasets[0].backgroundColor = inferenceHistory.map(d =>
-                d.detected ? 'rgba(16, 185, 129, 0.7)' : 'rgba(107, 114, 128, 0.7)'
-            );
-            inferenceChart.update('none');
-
-            log(`Inference: ${detected ? 'DETECTED' : 'empty'} | ${poseClass} | conf: ${confidence}% | motion: ${motion}`);
-        }
-
-        function updateStats() {
-            if (!startTime) return;
-            const elapsed = (Date.now() - startTime) / 1000;
-            const rate = (packetCount / elapsed).toFixed(1);
-            updateRateEl.textContent = `${rate} Hz`;
-        }
-
-        function clearData() {
+        function clear() {
             packetCount = 0;
-            inferenceCount = 0;
-            csiDataHistory = [];
-            amplitudeStatsHistory = [];
-            inferenceHistory = [];
             startTime = Date.now();
-
-            packetCountEl.textContent = '0';
-            inferenceCountEl.textContent = '0';
-
-            // Reset charts
-            amplitudeChart.data.labels = [];
-            amplitudeChart.data.datasets = [];
-            amplitudeChart.update();
-
-            phaseChart.data.labels = [];
-            phaseChart.data.datasets = [];
-            phaseChart.update();
-
-            amplitudeStatsChart.data.labels = [];
-            amplitudeStatsChart.data.datasets[0].data = [];
-            amplitudeStatsChart.data.datasets[1].data = [];
-            amplitudeStatsChart.update();
-
-            inferenceChart.data.labels = [];
-            inferenceChart.data.datasets[0].data = [];
-            inferenceChart.update();
-
-            log('Data cleared');
+            packetsEl.textContent = '0';
+            rateEl.textContent = '0';
+            rssiEl.textContent = '--';
+            logEl.innerHTML = '';
+            ampCtx.clearRect(0, 0, ampCanvas.width, ampCanvas.height);
+            phaseCtx.clearRect(0, 0, phaseCanvas.width, phaseCanvas.height);
+            serialLines = [];
+            serialLogEl.textContent = '';
+            serialCountEl.textContent = '(0 lines, max 1M)';
+            log('cleared');
         }
 
-        function exportData() {
-            const exportObj = {
-                timestamp: new Date().toISOString(),
-                csiDataHistory: csiDataHistory,
-                amplitudeStatsHistory: amplitudeStatsHistory,
-                inferenceHistory: inferenceHistory,
-                packetCount: packetCount,
-                inferenceCount: inferenceCount
-            };
+        connectBtn.addEventListener('click', () => {
+            if (port) disconnect();
+            else connect();
+        });
 
-            const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `densepose_csi_${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-
-            log('Data exported successfully');
-        }
-
-        // Event listeners
-        connectBtn.addEventListener('click', connectSerial);
-        disconnectBtn.addEventListener('click', disconnectSerial);
-        clearBtn.addEventListener('click', clearData);
-        exportBtn.addEventListener('click', exportData);
+        clearBtn.addEventListener('click', clear);
 
         // Check WebSerial support
         if (!('serial' in navigator)) {
-            log('WebSerial not supported in this browser. Use Chrome or Edge.', 'error');
+            log('WebSerial not supported. Use Chrome or Edge.', 'error');
             connectBtn.disabled = true;
+        } else {
+            log('ready. click connect to start.');
         }
-
-        log('DensePose-ESP32 Visualizer loaded. Click "Connect Serial" to begin.');
     </script>
 </body>
 </html>
