@@ -23,6 +23,12 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
+#include "lwip/sockets.h"
+#include "lwip/netdb.h"
+#include "lwip/ip_addr.h"
+#include "lwip/icmp.h"
+#include "lwip/inet_chksum.h"
+#include "lwip/raw.h"
 
 #include "wifi_csi.h"
 #include "pose_inference.h"
@@ -203,6 +209,77 @@ static esp_err_t wifi_init_sta(void)
 }
 
 /**
+ * @brief Traffic generation task for CSI collection
+ *
+ * CSI is only captured when WiFi packets are being transmitted/received.
+ * This task sends UDP packets to the gateway periodically to ensure
+ * continuous traffic. Without traffic, the CSI callback will never be triggered!
+ */
+static void traffic_generator_task(void *pvParameters)
+{
+    // Get gateway IP address
+    esp_netif_ip_info_t ip_info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif == NULL) {
+        ESP_LOGE(TAG, "Failed to get netif handle");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    esp_netif_get_ip_info(netif, &ip_info);
+    char gateway_ip[16];
+    snprintf(gateway_ip, sizeof(gateway_ip), IPSTR, IP2STR(&ip_info.gw));
+    ESP_LOGI(TAG, "Starting traffic generator to gateway: %s", gateway_ip);
+
+    // Create UDP socket
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Failed to create socket: errno %d", errno);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Set up destination address (gateway on arbitrary port)
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(7);  // Echo port (or any unused port)
+    inet_pton(AF_INET, gateway_ip, &dest_addr.sin_addr);
+
+    // Small payload for traffic generation
+    const char *payload = "CSI";
+    uint32_t packet_count = 0;
+
+    ESP_LOGI(TAG, "Traffic generator started - CSI data should now flow!");
+
+    while (1) {
+        // Send UDP packet to gateway
+        int err = sendto(sock, payload, strlen(payload), 0,
+                        (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (err >= 0) {
+            packet_count++;
+        }
+        // Silently ignore send errors - they happen when buffers are full
+        // but CSI is still captured from any traffic that does go through
+
+        // Log periodically (every ~100 seconds at 100Hz)
+        if (packet_count % 10000 == 0 && packet_count > 0) {
+            ESP_LOGI(TAG, "Traffic gen: %lu packets sent", packet_count);
+        }
+
+        // Send at ~100 Hz for good CSI rate
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    close(sock);
+    vTaskDelete(NULL);
+}
+
+static void start_traffic_generator(void)
+{
+    xTaskCreate(traffic_generator_task, "traffic_gen", 4096, NULL, 5, NULL);
+}
+
+/**
  * @brief Print system information
  *
  * Useful for debugging - shows available memory, chip info, etc.
@@ -295,6 +372,10 @@ void app_main(void)
 
     // Register pose detection result callback
     pose_register_callback(pose_detection_callback, NULL);
+
+    // Start traffic generator to create WiFi packets for CSI collection
+    // CSI is only captured when packets are being sent/received!
+    start_traffic_generator();
 
     ESP_LOGI(TAG, "Initialization complete. Collecting CSI data...");
     ESP_LOGI(TAG, "Streaming CSI data over serial (JSON format)...");
