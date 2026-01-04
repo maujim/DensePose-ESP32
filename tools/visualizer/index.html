@@ -210,34 +210,78 @@
             serialCountEl.textContent = `(${serialLines.length.toLocaleString()} lines, max 1M)`;
         }
 
-        function drawChart(ctx, data, color, minY, maxY) {
+        function drawChart(ctx, data, color, minY, maxY, yLabel, xLabel) {
             const canvas = ctx.canvas;
             const w = canvas.width = canvas.offsetWidth * 2;
             const h = canvas.height = canvas.offsetHeight * 2;
             ctx.clearRect(0, 0, w, h);
 
-            if (data.length === 0) return;
+            const margin = { left: 55, right: 15, top: 15, bottom: 35 };
+            const plotW = w - margin.left - margin.right;
+            const plotH = h - margin.top - margin.bottom;
 
             // Grid
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
-            for (let i = 0; i < 5; i++) {
-                const y = (h / 4) * i;
+            for (let i = 0; i <= 4; i++) {
+                const y = margin.top + (plotH / 4) * i;
                 ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(w, y);
+                ctx.moveTo(margin.left, y);
+                ctx.lineTo(w - margin.right, y);
                 ctx.stroke();
             }
 
-            // Data
+            // Y-axis labels
+            ctx.fillStyle = '#666';
+            ctx.font = '18px monospace';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i <= 4; i++) {
+                const y = margin.top + (plotH / 4) * i;
+                const val = maxY - (maxY - minY) * (i / 4);
+                ctx.fillText(val.toFixed(1), margin.left - 5, y);
+            }
+
+            // Y-axis label (rotated)
+            ctx.save();
+            ctx.translate(14, margin.top + plotH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#888';
+            ctx.fillText(yLabel, 0, 0);
+            ctx.restore();
+
+            // X-axis tick labels
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#666';
+            if (data.length > 0) {
+                const xSteps = [0, Math.floor(data.length / 2), data.length - 1];
+                for (const i of xSteps) {
+                    const x = margin.left + (i / (data.length - 1 || 1)) * plotW;
+                    // Align left edge at 0, right edge at max, center in middle
+                    if (i === 0) ctx.textAlign = 'left';
+                    else if (i === data.length - 1) ctx.textAlign = 'right';
+                    else ctx.textAlign = 'center';
+                    ctx.fillText(i.toString(), x, margin.top + plotH + 4);
+                }
+            }
+
+            // X-axis label
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#888';
+            ctx.fillText(xLabel, margin.left + plotW / 2, h - 12);
+
+            if (data.length === 0) return;
+
+            // Data line
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
             ctx.beginPath();
-            const step = w / (data.length - 1 || 1);
+            const step = plotW / (data.length - 1 || 1);
             for (let i = 0; i < data.length; i++) {
-                const x = i * step;
+                const x = margin.left + i * step;
                 const normalized = (data[i] - minY) / (maxY - minY || 1);
-                const y = h - normalized * h;
+                const y = margin.top + plotH - normalized * plotH;
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
@@ -267,8 +311,8 @@
 
                 // Draw charts
                 const maxAmp = Math.max(...lastAmp, 1);
-                drawChart(ampCtx, lastAmp, '#4a9', 0, maxAmp);
-                drawChart(phaseCtx, lastPhase, '#94a', -Math.PI, Math.PI);
+                drawChart(ampCtx, lastAmp, '#4a9', 0, maxAmp, 'strength', 'subcarrier');
+                drawChart(phaseCtx, lastPhase, '#94a', -Math.PI, Math.PI, 'radians', 'subcarrier');
 
             } catch (e) {
                 // Invalid JSON, ignore
