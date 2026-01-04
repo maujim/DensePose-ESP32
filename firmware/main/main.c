@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -257,12 +258,16 @@ static void traffic_generator_task(void *pvParameters)
                         (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err >= 0) {
             packet_count++;
+        } else if (errno != ENOMEM) {
+            // Only log non-ENOMEM errors. ENOMEM (errno 12) happens when
+            // network buffers are full from sending faster than the network
+            // can handle. This is expected at 100Hz and harmless - CSI is
+            // still captured from whatever traffic does go through.
+            ESP_LOGW(TAG, "Send failed: errno %d", errno);
         }
-        // Silently ignore send errors - they happen when buffers are full
-        // but CSI is still captured from any traffic that does go through
 
-        // Log periodically (every ~100 seconds at 100Hz)
-        if (packet_count % 10000 == 0 && packet_count > 0) {
+        // Log periodically (every ~5 seconds at 100Hz)
+        if (packet_count % 500 == 0 && packet_count > 0) {
             ESP_LOGI(TAG, "Traffic gen: %lu packets sent", packet_count);
         }
 
