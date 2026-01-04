@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSI Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 10px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #252525;
+            margin-bottom: 10px;
+        }
+        .header h1 { font-size: 16px; font-weight: normal; }
+        .status {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .status.disconnected { background: #5c2a2a; }
+        .status.connected { background: #2a5c2a; }
+        .controls { display: flex; gap: 8px; }
+        button {
+            background: #333;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button:hover { background: #444; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .stats {
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            background: #252525;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        .stat-item span { color: #888; }
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .chart-box {
+            background: #252525;
+            padding: 10px;
+        }
+        .chart-box h2 {
+            font-size: 12px;
+            font-weight: normal;
+            color: #888;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .help-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid #555;
+            font-size: 10px;
+            color: #666;
+            cursor: help;
+            position: relative;
+        }
+        .help-icon:hover { border-color: #888; color: #aaa; }
+        .help-icon .tooltip {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 280px;
+            background: #333;
+            border: 1px solid #444;
+            padding: 8px;
+            font-size: 11px;
+            color: #ccc;
+            line-height: 1.4;
+            z-index: 100;
+            font-weight: normal;
+        }
+        .help-icon:hover .tooltip { display: block; }
+        canvas { width: 100%; height: 200px; }
+        .log {
+            background: #252525;
+            padding: 10px;
+            height: 150px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+        .log-line { color: #666; }
+        .log-line.data { color: #4a9; }
+        .log-line.error { color: #a44; }
+        .serial-log {
+            background: #1a1a1a;
+            padding: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 10px;
+            color: #6a6;
+            white-space: pre;
+            border: 1px solid #333;
+        }
+        @media (max-width: 800px) {
+            .charts { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CSI Visualizer</h1>
+        <div class="controls">
+            <span class="status disconnected" id="status">disconnected</span>
+            <button id="connectBtn">connect</button>
+            <button id="clearBtn" disabled>clear</button>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-item"><span>packets:</span> <span id="packets">0</span></div>
+        <div class="stat-item"><span>rate:</span> <span id="rate">0</span> Hz</div>
+        <div class="stat-item"><span>rssi:</span> <span id="rssi">--</span> dBm</div>
+        <div class="stat-item"><span>subcarriers:</span> <span id="subcarriers">0</span></div>
+    </div>
+
+    <div class="charts">
+        <div class="chart-box">
+            <h2>amplitude <span class="help-icon">?<span class="tooltip">Signal strength per WiFi subcarrier. WiFi splits its channel into ~64 frequencies. Each point shows how strong that frequency arrived. Human bodies absorb/reflect signals, causing dips and peaks. X-axis: subcarrier index (0-63). Y-axis: signal strength (higher = stronger).</span></span></h2>
+            <canvas id="ampChart"></canvas>
+        </div>
+        <div class="chart-box">
+            <h2>phase <span class="help-icon">?<span class="tooltip">Signal timing per subcarrier. When signals bounce off objects, they arrive slightly delayed, shifting the wave's phase. Human movement causes phase changes over time. X-axis: subcarrier index. Y-axis: phase in radians (-π to +π). Rapid changes = motion detected.</span></span></h2>
+            <canvas id="phaseChart"></canvas>
+        </div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="chart-box" style="margin-top: 10px;">
+        <h2>serial output <span id="serialCount">(0 lines, max 1M)</span></h2>
+        <div class="serial-log" id="serialLog"></div>
+    </div>
+
+    <script>
+        // State
+        let port = null;
+        let reader = null;
+        let buffer = '';
+        let packetCount = 0;
+        let startTime = null;
+        let lastAmp = [];
+        let lastPhase = [];
+        let serialLines = [];
+        const MAX_SERIAL_LINES = 1000000;
+
+        // DOM
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const packetsEl = document.getElementById('packets');
+        const rateEl = document.getElementById('rate');
+        const rssiEl = document.getElementById('rssi');
+        const subcarriersEl = document.getElementById('subcarriers');
+        const logEl = document.getElementById('log');
+        const ampCanvas = document.getElementById('ampChart');
+        const phaseCanvas = document.getElementById('phaseChart');
+        const serialLogEl = document.getElementById('serialLog');
+        const serialCountEl = document.getElementById('serialCount');
+
+        // Canvas contexts
+        const ampCtx = ampCanvas.getContext('2d');
+        const phaseCtx = phaseCanvas.getContext('2d');
+
+        function log(msg, type = '') {
+            const line = document.createElement('div');
+            line.className = 'log-line ' + type;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(line);
+            if (logEl.children.length > 100) logEl.removeChild(logEl.firstChild);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function appendSerial(line) {
+            serialLines.push(line);
+            if (serialLines.length > MAX_SERIAL_LINES) {
+                serialLines.shift();
+            }
+            // Only render last 500 lines for performance
+            const displayLines = serialLines.slice(-500);
+            serialLogEl.textContent = displayLines.join('\n');
+            serialLogEl.scrollTop = serialLogEl.scrollHeight;
+            serialCountEl.textContent = `(${serialLines.length.toLocaleString()} lines, max 1M)`;
+        }
+
+        function drawChart(ctx, data, color, minY, maxY, yLabel, xLabel) {
+            const canvas = ctx.canvas;
+            const w = canvas.width = canvas.offsetWidth * 2;
+            const h = canvas.height = canvas.offsetHeight * 2;
+            ctx.clearRect(0, 0, w, h);
+
+            const margin = { left: 55, right: 15, top: 15, bottom: 35 };
+            const plotW = w - margin.left - margin.right;
+            const plotH = h - margin.top - margin.bottom;
+
+            // Grid
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = margin.top + (plotH / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(margin.left, y);
+                ctx.lineTo(w - margin.right, y);
+                ctx.stroke();
+            }
+
+            // Y-axis labels
+            ctx.fillStyle = '#666';
+            ctx.font = '18px monospace';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i <= 4; i++) {
+                const y = margin.top + (plotH / 4) * i;
+                const val = maxY - (maxY - minY) * (i / 4);
+                ctx.fillText(val.toFixed(1), margin.left - 5, y);
+            }
+
+            // Y-axis label (rotated)
+            ctx.save();
+            ctx.translate(14, margin.top + plotH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#888';
+            ctx.fillText(yLabel, 0, 0);
+            ctx.restore();
+
+            // X-axis tick labels
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#666';
+            if (data.length > 0) {
+                const xSteps = [0, Math.floor(data.length / 2), data.length - 1];
+                for (const i of xSteps) {
+                    const x = margin.left + (i / (data.length - 1 || 1)) * plotW;
+                    // Align left edge at 0, right edge at max, center in middle
+                    if (i === 0) ctx.textAlign = 'left';
+                    else if (i === data.length - 1) ctx.textAlign = 'right';
+                    else ctx.textAlign = 'center';
+                    ctx.fillText(i.toString(), x, margin.top + plotH + 4);
+                }
+            }
+
+            // X-axis label
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#888';
+            ctx.fillText(xLabel, margin.left + plotW / 2, h - 12);
+
+            if (data.length === 0) return;
+
+            // Data line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            const step = plotW / (data.length - 1 || 1);
+            for (let i = 0; i < data.length; i++) {
+                const x = margin.left + i * step;
+                const normalized = (data[i] - minY) / (maxY - minY || 1);
+                const y = margin.top + plotH - normalized * plotH;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        function processLine(line) {
+            line = line.trim();
+            if (!line.startsWith('{')) return;
+
+            try {
+                const data = JSON.parse(line);
+                if (!data.amp || !data.phase) return;
+
+                packetCount++;
+                packetsEl.textContent = packetCount;
+                rssiEl.textContent = data.rssi;
+                subcarriersEl.textContent = data.num || data.amp.length;
+
+                if (startTime) {
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    rateEl.textContent = (packetCount / elapsed).toFixed(1);
+                }
+
+                lastAmp = data.amp;
+                lastPhase = data.phase;
+
+                // Draw charts
+                const maxAmp = Math.max(...lastAmp, 1);
+                drawChart(ampCtx, lastAmp, '#4a9', 0, maxAmp, 'strength', 'subcarrier');
+                drawChart(phaseCtx, lastPhase, '#94a', -Math.PI, Math.PI, 'radians', 'subcarrier');
+
+            } catch (e) {
+                // Invalid JSON, ignore
+            }
+        }
+
+        async function connect() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+
+                statusEl.textContent = 'connected';
+                statusEl.className = 'status connected';
+                connectBtn.textContent = 'disconnect';
+                clearBtn.disabled = false;
+                startTime = Date.now();
+
+                log('connected to serial port');
+
+                const decoder = new TextDecoderStream();
+                port.readable.pipeTo(decoder.writable);
+                reader = decoder.readable.getReader();
+
+                // Read loop
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    // Buffer incoming data and split by newlines
+                    buffer += value;
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            appendSerial(line);
+                        }
+                        processLine(line);
+                    }
+                }
+            } catch (e) {
+                log('error: ' + e.message, 'error');
+            }
+        }
+
+        async function disconnect() {
+            try {
+                if (reader) {
+                    await reader.cancel();
+                    reader = null;
+                }
+                if (port) {
+                    await port.close();
+                    port = null;
+                }
+            } catch (e) {
+                // Ignore close errors
+            }
+
+            statusEl.textContent = 'disconnected';
+            statusEl.className = 'status disconnected';
+            connectBtn.textContent = 'connect';
+            clearBtn.disabled = true;
+            buffer = '';
+            log('disconnected');
+        }
+
+        function clear() {
+            packetCount = 0;
+            startTime = Date.now();
+            packetsEl.textContent = '0';
+            rateEl.textContent = '0';
+            rssiEl.textContent = '--';
+            logEl.innerHTML = '';
+            ampCtx.clearRect(0, 0, ampCanvas.width, ampCanvas.height);
+            phaseCtx.clearRect(0, 0, phaseCanvas.width, phaseCanvas.height);
+            serialLines = [];
+            serialLogEl.textContent = '';
+            serialCountEl.textContent = '(0 lines, max 1M)';
+            log('cleared');
+        }
+
+        connectBtn.addEventListener('click', () => {
+            if (port) disconnect();
+            else connect();
+        });
+
+        clearBtn.addEventListener('click', clear);
+
+        // Check WebSerial support
+        if (!('serial' in navigator)) {
+            log('WebSerial not supported. Use Chrome or Edge.', 'error');
+            connectBtn.disabled = true;
+        } else {
+            log('ready. click connect to start.');
+        }
+    </script>
+</body>
+</html>

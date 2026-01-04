@@ -5,6 +5,7 @@ idf_component_register(
     SRCS
         "main.c"
         "wifi_csi.c"
+        "pose_inference.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -12,6 +13,7 @@ idf_component_register(
         esp_event
         nvs_flash
         esp_netif
+        lwip
     PRIV_REQUIRES
         esp_timer
 )
