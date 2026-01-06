@@ -42,9 +42,18 @@ static const char *TAG = "main";
 #define WIFI_PASSWORD  CONFIG_WIFI_PASSWORD
 
 // Event group to signal WiFi connection status
+// Note: This event group is created once in wifi_init_sta() and intentionally
+// never deleted. It exists for the lifetime of the application since WiFi
+// events can occur at any time during normal operation.
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
+// Event handler instances - stored for potential future cleanup
+// Note: Currently these are never unregistered as WiFi is expected to
+// run for the lifetime of the application.
+static esp_event_handler_instance_t s_wifi_any_id_instance;
+static esp_event_handler_instance_t s_ip_got_ip_instance;
 
 // Connection retry counter
 static int s_retry_num = 0;
@@ -158,13 +167,10 @@ static esp_err_t wifi_init_sta(void)
 
     // Register event handlers
     // We want to know about WiFi events (connect/disconnect) and IP events (got IP)
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id));
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &s_wifi_any_id_instance));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip));
+        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &s_ip_got_ip_instance));
 
     // Configure WiFi connection parameters
     wifi_config_t wifi_config = {
@@ -333,11 +339,22 @@ void app_main(void)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         // NVS partition was corrupted, erase and reinitialize
-        ESP_LOGW(TAG, "NVS flash erase required");
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_LOGW(TAG, "NVS partition corrupted or version mismatch, erasing...");
+        ret = nvs_flash_erase();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to erase NVS flash: %s", esp_err_to_name(ret));
+            return;
+        }
         ret = nvs_flash_init();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize NVS after erase: %s", esp_err_to_name(ret));
+            return;
+        }
+        ESP_LOGI(TAG, "NVS reinitialized successfully");
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(ret));
+        return;
     }
-    ESP_ERROR_CHECK(ret);
 
     // Initialize WiFi in station mode
     ret = wifi_init_sta();

@@ -36,7 +36,7 @@ typedef struct {
     float phase[64];        // Phase (radians) for each subcarrier
     uint8_t num_subcarriers; // Actual number of valid subcarriers
     int8_t rssi;            // Received Signal Strength Indicator
-    uint32_t timestamp;     // Timestamp in microseconds
+    uint32_t timestamp;     // Timestamp in milliseconds
 } csi_data_t;
 
 /**
@@ -101,8 +101,10 @@ bool wifi_csi_is_active(void);
  *
  * @param packets_received Total packets received
  * @param packets_processed Total packets successfully processed
+ * @param packets_dropped Total packets dropped due to queue full
  */
-void wifi_csi_get_stats(uint32_t *packets_received, uint32_t *packets_processed);
+void wifi_csi_get_stats(uint32_t *packets_received, uint32_t *packets_processed,
+                        uint32_t *packets_dropped);
 
 #ifdef __cplusplus
 }
